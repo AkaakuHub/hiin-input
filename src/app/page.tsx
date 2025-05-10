@@ -9,6 +9,7 @@ import { Token, TokenizedArticle, PredictionToken } from "../types";
 export default function HiinAgent() {
   const [article, setArticle] = useState<TokenizedArticle | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [predicting, setPredicting] = useState<boolean>(false); // 追加: 予測中フラグ
   const [inputHistory, setInputHistory] = useState<Token[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [predictions, setPredictions] = useState<PredictionToken[]>([]);
@@ -48,6 +49,7 @@ export default function HiinAgent() {
     const newHistory = [...inputHistory, token];
     setInputHistory(newHistory);
 
+    setPredicting(true); // 予測中フラグON
     try {
       // 予測APIを呼び出す
       const res = await axios.post("/api/gemini", { history: newHistory, article });
@@ -68,6 +70,8 @@ export default function HiinAgent() {
     } catch (error) {
       console.error('予測の取得に失敗しました:', error);
       setPredictions([]);
+    } finally {
+      setPredicting(false); // 予測中フラグOFF
     }
   };
 
@@ -112,7 +116,13 @@ export default function HiinAgent() {
       {article && !loading && (
         <>
           <InputHistory tokens={inputHistory} />
-          <PredictionArea predictions={predictions} onSelect={handleTokenSelect} />
+          {predicting ? (
+            <div className="flex items-center justify-center p-5 text-lg text-gray-500 animate-pulse">
+              AIが考え中...
+            </div>
+          ) : (
+            <PredictionArea predictions={predictions} onSelect={handleTokenSelect} />
+          )}
           <div className="fixed bottom-0 left-0 right-0 z-50 bg-gray-50 border-t border-gray-200 shadow-lg max-w-xl mx-auto h-[100px] flex items-center px-4 gap-2">
             <TokenCategory 
               direction="prev" 

@@ -2,7 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Token, TokenizedArticle } from '../types';
 
 // APIキーの取得と検証
-const API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+const API_KEY = process.env.GEMINI_API_KEY || '';
 // console.log("APIキーの状態:", API_KEY ? "設定されています" : "未設定です");
 
 const genAI = new GoogleGenerativeAI(API_KEY);
