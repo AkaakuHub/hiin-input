@@ -1,103 +1,143 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState } from "react";
+import { InputHistory, PredictionArea, TokenCategory, TokenSlider } from "../components";
+import axios from "axios";
+import { Token, TokenizedArticle, PredictionToken } from "../types";
+// カスタムCSS完全廃止: Tailwind CSS v4ユーティリティクラスのみ利用
+
+export default function HiinAgent() {
+  const [article, setArticle] = useState<TokenizedArticle | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [inputHistory, setInputHistory] = useState<Token[]>([]);
+  const [activeCategory, setActiveCategory] = useState<string>("");
+  const [predictions, setPredictions] = useState<PredictionToken[]>([]);
+  const [text, setText] = useState<string>("");
+  const [error, setError] = useState<string>("");
+
+  const handleAnalyze = async () => {
+    setLoading(true);
+    setError("");
+    setInputHistory([]);
+    setPredictions([]);
+    setArticle(null);
+    setActiveCategory("");
+    try {
+      const res = await axios.post("/api/morpho", { text });
+      const tokenizedArticle = res.data;
+      // categoriesやtokensByCategoryが空配列/空オブジェクトの場合はエラー扱い
+      if (!tokenizedArticle || !Array.isArray(tokenizedArticle.categories) || tokenizedArticle.categories.length === 0 || !tokenizedArticle.tokensByCategory || Object.keys(tokenizedArticle.tokensByCategory).length === 0) {
+        setError('解析結果が空です。記事本文を見直してください');
+        setArticle(null);
+        return;
+      }
+      setArticle(tokenizedArticle);
+      setActiveCategory(tokenizedArticle.categories[0]);
+    } catch (error) {
+      setError('記事の解析に失敗しました');
+      setArticle(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTokenSelect = async (token: Token) => {
+    if (!article) return;
+
+    // 新しい履歴を設定
+    const newHistory = [...inputHistory, token];
+    setInputHistory(newHistory);
+
+    try {
+      // 予測APIを呼び出す
+      const res = await axios.post("/api/gemini", { history: newHistory, article });
+      // console.log("APIレスポンス:", res.data);
+
+      // レスポンスを検証
+      if (Array.isArray(res.data) && res.data.length > 0) {
+        const formattedPredictions = res.data.map((pred: any) => ({
+          surface: pred.surface,
+          category: pred.category,
+          score: pred.score ?? 0,
+        })) as PredictionToken[];
+        setPredictions(formattedPredictions);
+      } else {
+        console.warn("APIからの予測が空でした");
+        setPredictions([]);
+      }
+    } catch (error) {
+      console.error('予測の取得に失敗しました:', error);
+      setPredictions([]);
+    }
+  };
+
+  const handleCategoryChange = (direction: 'prev' | 'next') => {
+    if (!article) return;
+    const currentIndex = article.categories.indexOf(activeCategory);
+    let newIndex;
+    if (direction === 'next') {
+      newIndex = (currentIndex + 1) % article.categories.length;
+    } else {
+      newIndex = (currentIndex - 1 + article.categories.length) % article.categories.length;
+    }
+    setActiveCategory(article.categories[newIndex]);
+  };
+
+  const handleInputConfirm = () => {
+    const text = inputHistory.map(token => token.surface).join('');
+    alert(`入力が確定されました: ${text}`);
+  };
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
+    <div className="max-w-xl mx-auto p-6 font-sans">
+      <div className="mb-4 w-full max-w-2xl">
+        <label htmlFor="article-text" className="block mb-2 font-bold">記事本文を入力してください</label>
+        <textarea
+          id="article-text"
+          className="w-full h-32 p-2 border rounded resize-y"
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder="ここに記事本文を貼り付けてください"
         />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+        <button
+          className="mt-2 px-4 py-2 bg-blue-600 text-white rounded font-bold shadow-sm transition hover:bg-blue-700 disabled:opacity-50"
+          onClick={handleAnalyze}
+          disabled={loading || !text.trim()}
+        >
+          形態素解析して開始
+        </button>
+      </div>
+      {loading && <div className="flex items-center justify-center p-5 text-lg text-gray-500">記事を解析中...</div>}
+      {error && <div className="p-3 my-3 text-red-700 bg-red-50 border-l-4 border-red-400 rounded">{error}</div>}
+      {article && !loading && (
+        <>
+          <InputHistory tokens={inputHistory} />
+          <PredictionArea predictions={predictions} onSelect={handleTokenSelect} />
+          <div className="fixed bottom-0 left-0 right-0 z-50 bg-gray-50 border-t border-gray-200 shadow-lg max-w-xl mx-auto h-[100px] flex items-center px-4 gap-2">
+            <TokenCategory 
+              direction="prev" 
+              activeCategory={activeCategory} 
+              onChange={() => handleCategoryChange('prev')} 
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+            <TokenSlider 
+              tokens={Array.isArray(article.tokensByCategory[activeCategory]) ? article.tokensByCategory[activeCategory] : []}
+              onSelect={handleTokenSelect}
+            />
+            <TokenCategory 
+              direction="next" 
+              activeCategory={activeCategory} 
+              onChange={() => handleCategoryChange('next')} 
+            />
+            <button
+              className="ml-2 w-16 h-10 bg-green-500 text-white rounded font-bold shadow-sm transition hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-400"
+              onClick={handleInputConfirm}
+            >
+              確定
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
+// 旧Next.jsテンプレート部分・残骸を完全削除
